@@ -96,7 +96,8 @@ endfunction
 function! lsc#edit#apply(workspace_edit) abort
   if (exists('g:lsc_enable_apply_edit')
       \ && !g:lsc_enable_apply_edit)
-      \ || !has_key(a:workspace_edit, 'changes')
+      \ || (!has_key(a:workspace_edit, 'changes')
+      \     && !has_key(a:workspace_edit, 'documentChanges'))
     return v:false
   endif
   let view = winsaveview()
@@ -109,7 +110,15 @@ function! lsc#edit#apply(workspace_edit) abort
   set selection=exclusive
   set virtualedit=onemore
   try
-    call s:ApplyAll(a:workspace_edit.changes)
+    if has_key(a:workspace_edit, 'documentChanges')
+      for change in a:workspace_edit.documentChanges
+        call s:ApplyAll(change.textDocument.uri, change.edits)
+      endfor
+    elseif has_key(a:workspace_edit, 'changes')
+      for [uri, edits] in items(a:workspace_edit.changes)
+        call s:ApplyAll(uri, edits)
+      endfor
+    endif
   finally
     if len(alternate) > 0 | let @#=alternate | endif
     if old_buffer != bufnr('%') | execute 'buffer' old_buffer | endif
@@ -121,22 +130,26 @@ function! lsc#edit#apply(workspace_edit) abort
   return v:true
 endfunction
 
-function! s:ApplyAll(changes) abort
-  for [uri, edits] in items(a:changes)
-    let l:file_path = lsc#uri#documentPath(uri)
-    let l:bufnr = lsc#file#bufnr(l:file_path)
-    let l:cmd = 'keepjumps keepalt'
-    if l:bufnr !=# -1
-      let l:cmd .= ' b '.l:bufnr
-    else
-      let l:cmd .= ' edit '.l:file_path
-    endif
-    for edit in sort(edits, '<SID>CompareEdits')
-      let l:cmd .= ' | execute "keepjumps normal! '.s:Apply(edit).'"'
-    endfor
-    execute l:cmd
-    call lsc#file#onChange(l:file_path)
+function! s:ApplyAll(uri, edits) abort
+  let l:file_path = lsc#uri#documentPath(a:uri)
+  let l:bufnr = bufnr(l:file_path)
+  let l:cmd = 'keepjumps keepalt'
+  if l:bufnr !=# -1
+    let l:cmd .= ' b '.l:bufnr
+  else
+    let l:cmd .= ' edit '.l:file_path
+  endif
+  for edit in sort(a:edits, '<SID>CompareEdits')
+    let l:cmd .= ' | execute "keepjumps normal! '.s:Apply(edit).'"'
   endfor
+  try
+    let l:was_paste = &paste
+    set paste
+    execute l:cmd
+  finally
+    let &paste = l:was_paste
+  endtry
+  call lsc#file#onChange(l:file_path)
 endfunction
 
 " Find the command to apply a `TextEdit`.
