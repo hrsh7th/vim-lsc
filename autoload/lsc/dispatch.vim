@@ -38,8 +38,7 @@ function! lsc#dispatch#message(server, message) abort
     elseif a:message['method'] =~? '\v^\$'
       " Unhandled extension to the protocol, drop the message
     else
-      echom 'Got notification: '.a:message['method'].
-          \ ' params: '.string(a:message['params'])
+      echom 'Got notification: ' . string(a:message)
     endif
   elseif has_key(a:message, 'error')
     call s:handleError(a:message['error'])
